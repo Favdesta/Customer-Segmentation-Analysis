@@ -46,6 +46,7 @@ Used Tableau to create:
 - R: Data preprocessing, statistical analysis, and machine learning
 - Libraries: dplyr, randomForest, e1071, ggplot2
 - Tableau: Interactive data visualization and dashboard creation
+  - [Dashboard](https://public.tableau.com/app/profile/faven.desta/viz/CustomerSegmentationAnalysis_17417308211040/Dashboard1)
 
 ## Future Improvements
 - Explore additional feature engineering to improve model accuracy
