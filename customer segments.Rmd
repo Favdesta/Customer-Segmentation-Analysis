@@ -1,0 +1,356 @@
+---
+title: "Customer Segmentation Analysis"
+author: "Faven Desta"
+date: "March 7, 2025"
+output:
+  pdf_document: default
+  html_notebook: default
+toc: true
+toc_float: true
+theme: united
+highlight: tango
+---
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+This R Markdown document demonstrates a complete customer segmentation analysis workflow. We'll analyze customer behavior patterns to identify distinct market segments that can be targeted with specific marketing strategies. The analysis includes data preprocessing, exploratory data analysis, model building, and evaluation of segmentation results.
+
+##### Project Objectives:
+
+- Identify natural customer segments based on demographic and behavioral data
+- Compare performance of different machine learning algorithms for segmentation
+- Identify key features that differentiate customer segments
+- Visualize segment characteristics for business insights
+
+##### Setup and Package Installation
+
+This section loads all necessary R packages for our analysis. We'll use dplyr for data manipulation, randomForest and e1071 for modeling, and ggplot2 for visualization.
+
+```{r}
+
+# Customer Segmentation Analysis
+# This R Notebook analyzes customer data to identify distinct customer segments
+# using machine learning techniques like Random Forest and SVM.
+
+#----------------------------------------------------------------------
+# SECTION 1: SETUP AND DATA PREPARATION
+#----------------------------------------------------------------------
+
+# Install required packages (only run once)
+# Uncomment these lines if you need to install these packages
+
+#install.packages("dplyr")         # For data manipulation
+#install.packages("randomForest")  # For building Random Forest models
+#install.packages("e1071")         # For building SVM models
+#install.packages("ggplot2")       # For data visualization
+
+install.packages("bookmark")
+
+
+# Load necessary libraries
+library(dplyr)         # Data manipulation package
+library(randomForest)  # Random forest model package
+library(e1071)         # SVM model package (Support Vector Machine)
+library(ggplot2)       # Data visualization package
+
+
+```
+
+### Data Loading and Inspection
+
+In this section, we load the cleaned customer dataset and examine its structure to understand the available features. We'll remove any non-informative columns (like ID) and display sample records to get familiar with the data.
+
+```{r}
+# Load the customer data 
+# The CSV file should be in your working directory
+data <- read.csv("cleaned_customer.csv", header = TRUE)
+
+# Remove the ID column as it's not useful for modeling
+# The %>% symbol is a pipe operator that passes the result to the next function
+data <- data %>% select(-ID)
+
+# Display the first 4 rows to inspect the data
+head(data, 4)
+
+# Examine data structure
+str(data)
+
+# Summary statistics
+summary(data)
+
+```
+
+### Data Preprocessing
+
+This section focuses on preparing the data for modeling. We'll convert categorical variables to appropriate data types, handle missing values, and ensure our data is in the correct format for machine learning algorithms.
+
+```{r}
+#----------------------------------------------------------------------
+# SECTION 2: DATA PREPROCESSING
+#----------------------------------------------------------------------
+
+# Convert categorical variables to appropriate data types
+# as.factor converts variables to categorical format
+data$Segmentation <- as.factor(data$Segmentation)  # Target variable
+
+# Convert Spending_Score to an ordered factor
+# This preserves the natural ordering: Low < Average < High
+data$Spending_Score <- factor(data$Spending_Score, 
+                              levels = c("Low", "Average", "High"), 
+                              ordered = TRUE)
+
+# Convert other categorical variables to factors
+data$Gender <- as.factor(data$Gender)
+data$Profession <- as.factor(data$Profession)
+data$Var_1 <- as.factor(data$Var_1)
+
+# Remove any rows with missing values
+data <- na.omit(data)
+
+# Check the processed data structure
+str(data)
+
+```
+
+### Data Splitting and Feature Scaling
+
+In this section, we divide our data into training and testing sets, then scale the numerical features. Proper scaling ensures that variables with larger ranges don't dominate the model training process.
+
+```{r}
+# Set a random seed for reproducibility
+# This ensures you get the same results each time you run the code
+set.seed(1114)
+
+# Split data into training (80%) and testing (20%) sets
+# The training set is used to build the model
+# The testing set is used to evaluate the model's performance
+train_indices <- sample(1:nrow(data), size = 0.8 * nrow(data))
+train_data <- data[train_indices, ]   # Training set
+test_data <- data[-train_indices, ]   # Testing set
+
+```
+
+
+```{r}
+#----------------------------------------------------------------------
+# SECTION 3: FEATURE SCALING
+#----------------------------------------------------------------------
+
+# Scale numeric features to have mean=0 and standard deviation=1
+# This is important for many machine learning algorithms
+# We calculate parameters from training data only to avoid data leakage
+
+# Calculate mean and standard deviation from training data
+age_mean <- mean(train_data$Age)
+age_sd <- sd(train_data$Age)
+work_exp_mean <- mean(train_data$Work_Experience)
+work_exp_sd <- sd(train_data$Work_Experience)
+family_size_mean <- mean(train_data$Family_Size)
+family_size_sd <- sd(train_data$Family_Size)
+
+```
+
+
+```{r}
+# Apply scaling to both training and testing data using training parameters
+# This is the z-score standardization: (value - mean) / standard_deviation
+train_data$Age <- (train_data$Age - age_mean) / age_sd
+test_data$Age <- (test_data$Age - age_mean) / age_sd
+train_data$Work_Experience <- (train_data$Work_Experience - work_exp_mean) / work_exp_sd
+test_data$Work_Experience <- (test_data$Work_Experience - work_exp_mean) / work_exp_sd
+train_data$Family_Size <- (train_data$Family_Size - family_size_mean) / family_size_sd
+test_data$Family_Size <- (test_data$Family_Size - family_size_mean) / family_size_sd
+
+
+```
+ 
+### Exploratory Data Analysis
+
+Before modeling, we'll explore the data to understand relationships between variables and identify patterns. This helps inform our modeling approach and provides initial insights into customer segments.
+
+```{r}
+# Examine the distribution of segments
+ggplot(data, aes(
+  x = Segmentation, 
+  fill = Segmentation)) +
+  geom_bar() +
+  labs(title = "Distribution of Customer Segments",
+       x = "Segment",
+       y = "Count") +
+  theme_minimal()
+
+# Examine relationship between Age and Spending_Score by Segment
+ggplot(data, aes(
+  x = Age, 
+  y = Spending_Score, 
+  color = Segmentation)) +
+  geom_jitter(alpha = 0.7) +
+  labs(title = "Age vs Spending Score by Segment",
+       x = "Age",
+       y = "Spending Score") +
+  theme_minimal()
+
+# Examine Family Size distribution across segments
+ggplot(data, aes(
+  x = Segmentation, 
+  y = Family_Size, 
+  fill = Segmentation)) +
+  geom_boxplot() +
+  labs(title = "Family Size by Customer Segment",
+       x = "Segment",
+       y = "Family Size") +
+  theme_minimal()
+```
+
+### Model Training: Random Forest
+
+In this section, we'll train a Random Forest model to classify customers into segments. Random Forest is an ensemble learning method that builds multiple decision trees and merges their predictions, typically resulting in better performance than a single decision tree.
+
+### Model Training: Support Vector Machine
+
+This section trains a Support Vector Machine model as an alternative approach. SVM finds the optimal hyperplane that maximizes the margin between different classes, and can be effective for complex classification tasks.
+
+```{r}
+#----------------------------------------------------------------------
+# SECTION 4: MODEL TRAINING
+#----------------------------------------------------------------------
+
+# Train a Random Forest model
+# The formula Segmentation ~ . means predict Segmentation using all other variables
+# ntree=500 sets the number of decision trees to build
+# importance=TRUE allows us to examine variable importance later
+rf_model <- randomForest(Segmentation ~ ., 
+                        data = train_data, 
+                        importance = TRUE, 
+                        ntree = 500)
+
+# Train a Support Vector Machine model
+# kernel="radial" specifies a radial basis function kernel (good for non-linear data)
+# probability=TRUE allows probability estimates
+svm_model <- svm(Segmentation ~ ., 
+                data = train_data, 
+                kernel = "radial", 
+                probability = TRUE)
+```
+
+
+```{r}
+#----------------------------------------------------------------------
+# SECTION 5: MODEL EVALUATION
+#----------------------------------------------------------------------
+
+# Make predictions on the test data
+rf_predictions <- predict(rf_model, test_data)
+svm_predictions <- predict(svm_model, test_data)
+
+# Create confusion matrices to compare predicted vs actual values
+# Rows represent predicted values, columns represent actual values
+rf_confusion <- table(rf_predictions, test_data$Segmentation)
+svm_confusion <- table(svm_predictions, test_data$Segmentation)
+
+# Calculate accuracy: (sum of diagonal elements) / (sum of all elements)
+# Diagonal elements are correctly classified instances
+rf_accuracy <- sum(diag(rf_confusion)) / sum(rf_confusion)
+svm_accuracy <- sum(diag(svm_confusion)) / sum(svm_confusion)
+
+# Print the accuracy of each model, rounded to 3 decimal places
+print(paste("Random Forest Accuracy:", round(rf_accuracy, 3)))
+print(paste("SVM Accuracy:", round(svm_accuracy, 3)))
+```
+### Feature Importance Analysis
+
+Understanding which features contribute most to segment differentiation is crucial for business insights. This section analyzes feature importance from our Random Forest model and visualizes the results.
+
+```{r}
+#----------------------------------------------------------------------
+# SECTION 6: FEATURE IMPORTANCE ANALYSIS
+#----------------------------------------------------------------------
+
+# Extract feature importance from the Random Forest model
+# This shows which variables were most useful for prediction
+var_imp <- importance(rf_model)
+
+# Convert to a data frame for easier manipulation
+var_imp_df <- data.frame(
+  Variable = rownames(var_imp), 
+  Importance = var_imp[, "MeanDecreaseGini"])
+
+# Sort in descending order of importance
+var_imp_df <- var_imp_df[order(var_imp_df$Importance, decreasing = TRUE), ]
+
+# Display the importance values
+print(var_imp_df)
+
+# Create a bar plot to visualize feature importance
+ggplot(var_imp_df, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Feature Importance for Customer Segmentation",
+       x = "Features",
+       y = "Importance (Mean Decrease in Gini)") +
+  theme_minimal()
+
+
+
+```
+
+### Model Comparison and Segment Profiling
+This section compares our models and creates profiles for each customer segment based on their characteristics. These profiles provide actionable insights for targeted marketing strategies.
+
+```{r}
+# Compare model accuracies
+models <- c("Random Forest", "SVM")
+accuracies <- c(rf_accuracy, svm_accuracy)
+model_comparison <- data.frame(Model = models, Accuracy = accuracies)
+
+ggplot(model_comparison, aes(x = Model, y = Accuracy, fill = Model)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Model Accuracy Comparison",
+       x = "Model",
+       y = "Accuracy") +
+  theme_minimal() +
+  ylim(0, 1)
+
+# Segment profiling - original unscaled data for interpretability
+segment_profiles <- data %>%
+  group_by(Segmentation) %>%
+  summarise(
+    Count = n(),
+    Avg_Age = mean(Age),
+    Avg_Family_Size = mean(Family_Size),
+    Avg_Work_Experience = mean(Work_Experience),
+    Pct_Male = mean(Gender == "Male") * 100,
+    Pct_Married = mean(Ever_Married) * 100,
+    Pct_Graduated = mean(Graduated) * 100,
+    Pct_High_Spending = mean(Spending_Score == "High") * 100
+  )
+
+print(segment_profiles)
+```
+
+
+### Conclusion and Business Recommendations
+
+This final section summarizes our findings and provides actionable recommendations for marketing and business strategy based on the identified customer segments.
+
+Based on our analysis, we've identified four distinct customer segments with unique characteristics. The Random Forest model achieved 47% accuracy while the SVM model achieved 44% accuracy in classifying customers into these segments.
+
+##### Key findings include:
+
+- The most important features for segmentation were Age, Work Experience, and Family Size
+- Segment A tends to have younger customers with higher spending scores
+- Segment B includes middle-aged customers with larger family sizes
+- Segment C represents older customers with more work experience
+- Segment D consists of younger customers with low spending scores
+
+##### Business recommendations:
+
+1. Target Segment A with trendy products and digital marketing campaigns
+2. Develop family-oriented offerings for Segment B
+3. Focus on premium, high-quality products for Segment C
+4. Create budget-friendly options and loyalty programs to increase spending in Segment D
+
+Future work could include implementing more advanced clustering techniques or developing predictive models for customer lifetime value within each segment.
